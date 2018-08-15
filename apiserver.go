@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/fluent/fluent-logger-golang/fluent"
 	"github.com/json-iterator/go"
@@ -35,6 +36,7 @@ func closeFluentd() {
 	log.Print("close fluentd")
 	client.Close()
 }
+
 func startHTTPServer() {
 	client = createFluentdClient()
 	defer closeFluentd()
@@ -53,7 +55,7 @@ func startHTTPServer() {
 }
 
 func requestHandler(ctx *fasthttp.RequestCtx) {
-	//log.Printf("Raw request is:\n---CUT---\n%s\n---CUT---", &ctx.Request)
+	log.Printf("Raw request is:\n---CUT---\n%s\n---CUT---", &ctx.Request)
 
 	data := parseJSONLog(ctx.PostBody())
 
@@ -98,11 +100,8 @@ func sendFluentd(data map[string]interface{}) {
 		//time.Sleep(time.Second * 3)
 	}(data)
 }
-func validateJSON() {
 
-}
-
-func Example_JSON() {
+func Example_JSONSend() {
 	str := `{
         "appId":"aaa",
         "vid":"123",
@@ -120,22 +119,26 @@ func Example_JSON() {
     }`
 	data := parseJSONLog([]byte(str))
 	log.Printf("%s", data["logBody"])
-	client = createFluentdClient()
-	defer closeFluentd()
 
-	log.Print("send 10000")
-	for i := 0; i < 10000; i++ {
-		sendFluentd(data)
-	}
-	log.Print("wait 10000")
+	//client = createFluentdClient()
+	//defer closeFluentd()
+	// TOSO send http
+
+	wg.Done()
+}
+
+func Example_StartServerAndSendData() {
+
+	go startHTTPServer()
+
+	time.Sleep(time.Second)
+	wg.Add(1)
+	go Example_JSONSend()
 
 	wg.Wait()
-
-	log.Print("end 10000")
-
 }
 
 func main() {
-	// startHttpServer()
-	Example_JSON()
+
+	Example_StartServerAndSendData()
 }
