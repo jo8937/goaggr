@@ -1,2 +1,141 @@
-// test
+package main
 
+// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
+
+import (
+	"flag"
+	"fmt"
+	"log"
+
+	"github.com/fluent/fluent-logger-golang/fluent"
+	"github.com/json-iterator/go"
+
+	//"compress/gzip"
+	"sync"
+
+	"github.com/valyala/fasthttp"
+)
+
+var (
+	addr     = flag.String("addr", ":8080", "TCP address to listen to")
+	compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
+	client   *fluent.Fluent
+	wg       sync.WaitGroup
+)
+
+func createFluentdClient() *fluent.Fluent {
+	log.Printf("Connect Fluentd... ")
+	c, fluentderr := fluent.New(fluent.Config{FluentPort: 24224, FluentHost: "localhost"})
+	if fluentderr != nil {
+		panic(fluentderr)
+	}
+	return c
+}
+func closeFluentd() {
+	log.Print("close fluentd")
+	client.Close()
+}
+func startHTTPServer() {
+	client = createFluentdClient()
+	defer closeFluentd()
+	flag.Parse()
+
+	handler := requestHandler
+	if *compress {
+		handler = fasthttp.CompressHandler(handler)
+	}
+
+	log.Printf("Start Server... %s", *addr)
+
+	if err := fasthttp.ListenAndServe(*addr, handler); err != nil {
+		log.Fatalf("Error in ListenAndServe: %s", err)
+	}
+}
+
+func requestHandler(ctx *fasthttp.RequestCtx) {
+	//log.Printf("Raw request is:\n---CUT---\n%s\n---CUT---", &ctx.Request)
+
+	data := parseJSONLog(ctx.PostBody())
+
+	go sendFluentd(data)
+
+	ctx.SetContentType("application/json; charset=utf8")
+	fmt.Fprintf(ctx, "{}")
+
+}
+
+func parseJSONLog(bytes []byte) map[string]interface{} {
+	var datamap map[string]interface{}
+	var json = jsoniter.ConfigCompatibleWithStandardLibrary
+	if err := json.Unmarshal(bytes, &datamap); err != nil {
+		log.Printf("JSON Parse ERROR : %s", bytes)
+		log.Fatal(err)
+	}
+	//log.Printf("%+v", datamap)
+	//log.Printf("%s", bytes)
+
+	return datamap
+}
+
+func sendFluentd(data map[string]interface{}) {
+
+	tag := "debug.golang"
+	wg.Add(1)
+	go func(data map[string]interface{}) {
+		defer wg.Done()
+		error := client.Post(tag, data)
+		// error := logger.PostWithTime(tag, time.Now(), data)
+		if error != nil {
+			//panic(error)
+			// TODO : file write
+			var json = jsoniter.ConfigCompatibleWithStandardLibrary
+			if JSONString, err := json.Marshal(data); err != nil {
+				log.Fatal(JSONString)
+			} else {
+				log.Fatal("fail to send fluentd")
+			}
+		}
+		//time.Sleep(time.Second * 3)
+	}(data)
+}
+func validateJSON() {
+
+}
+
+func Example_JSON() {
+	str := `{
+        "appId":"aaa",
+        "vid":"123",
+        "logBody":[
+            {
+                "category":"a",
+                "dateTime":"2018-01-01 11:11:11"
+            }
+            ,
+            {
+                "category":"bbb",
+                "dateTime":"2018-01-01 11:11:11"
+            }
+        ]
+    }`
+	data := parseJSONLog([]byte(str))
+	log.Printf("%s", data["logBody"])
+	client = createFluentdClient()
+	defer closeFluentd()
+
+	log.Print("send 10000")
+	for i := 0; i < 10000; i++ {
+		sendFluentd(data)
+	}
+	log.Print("wait 10000")
+
+	wg.Wait()
+
+	log.Print("end 10000")
+
+}
+
+func main() {
+	// startHttpServer()
+	Example_JSON()
+}
