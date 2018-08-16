@@ -4,13 +4,9 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"time"
 
 	"github.com/fluent/fluent-logger-golang/fluent"
 	"github.com/json-iterator/go"
@@ -105,6 +101,9 @@ func parseJSONLog(bytes []byte) map[string]interface{} {
 	return datamap
 }
 
+/**
+실제 로그를 fluentd 로 전달. 비동기로 동작
+*/
 func sendFluentd(tag string, data map[string]interface{}) {
 
 	wg.Add(1)
@@ -126,81 +125,6 @@ func sendFluentd(tag string, data map[string]interface{}) {
 	}(data)
 }
 
-func Example_JSONSend() {
-	str := `{
-        "appId":"aaa",
-        "vid":"123",
-        "logBody":[
-            {
-                "category":"a",
-                "dateTime":"2018-01-01 11:11:11"
-            }
-            ,
-            {
-                "category":"bbb",
-                "dateTime":"2018-01-01 11:11:11"
-            }
-        ]
-	}`
-	jsonByte := []byte(str)
-	data := parseJSONLog(jsonByte)
-	log.Printf("%s", data["logBody"])
-
-	//reqBodyBuf := bytes.NewBufferString(str)
-
-	var gzipBuf bytes.Buffer
-	g := gzip.NewWriter(&gzipBuf)
-
-	if _, err := g.Write(jsonByte); err != nil {
-		log.Print(err)
-		return
-	}
-	if err := g.Close(); err != nil {
-		log.Print(err)
-		return
-	}
-
-	req, err := http.NewRequest("POST", "http://localhost:8080/v2/recv", &gzipBuf)
-
-	req.Header.Set("X-Custom-Header", "myvalue")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	//client = createFluentdClient()
-	//defer closeFluentd()
-	// TOSO send http
-	if err != nil {
-		panic(err)
-	}
-	log.Print(resp.StatusCode)
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err == nil {
-		resText := string(respBody)
-		log.Printf(resText)
-	}
-
-	wg.Done()
-}
-
-func Example_StartServerAndSendData() {
-
-	wg.Add(1)
-	go func() {
-		startHTTPServer()
-		wg.Done()
-	}()
-
-	time.Sleep(time.Second)
-	wg.Add(1)
-
-	go Example_JSONSend()
-	wg.Wait()
-}
-
 func main() {
-
-	Example_StartServerAndSendData()
+	startHTTPServer()
 }
