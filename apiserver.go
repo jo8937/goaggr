@@ -129,12 +129,16 @@ func Example_JSONSend() {
 
 func Example_StartServerAndSendData() {
 
-	go startHTTPServer()
+	wg.Add(1)
+	go func() {
+		startHTTPServer()
+		wg.Done()
+	}()
 
 	time.Sleep(time.Second)
 	wg.Add(1)
-	go Example_JSONSend()
 
+	go Example_JSONSend()
 	wg.Wait()
 }
 
