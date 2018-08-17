@@ -1,17 +1,22 @@
-package main_test
+package main
 
 // https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 
 import (
 	"bytes"
 	"compress/gzip"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"testing"
 )
 
-func Example_JSONSend() {
+var (
+	url = flag.String("url", "", "TCP address to listen to")
+	cnt = flag.Int("cnt", 1000000, "max retry ")
+)
+
+func SendJSONSample() {
 	str := `{
         "appId":"aaa",
         "vid":"123",
@@ -43,33 +48,36 @@ func Example_JSONSend() {
 		return
 	}
 
-	req, err := http.NewRequest("POST", "http://localhost:8080/v2/recv", &gzipBuf)
+	req, err := http.NewRequest("POST", *url, &gzipBuf)
 
 	req.Header.Set("X-Custom-Header", "myvalue")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	//client = createFluentdClient()
-	//defer closeFluentd()
-	// TOSO send http
 	if err != nil {
 		panic(err)
 	}
-	log.Print(resp.StatusCode)
 
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err == nil {
-		resText := string(respBody)
-		log.Printf(resText)
+	for i := 0; i < *cnt; i++ {
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		//client = createFluentdClient()
+		//defer closeFluentd()
+		// TOSO send http
+		if err != nil {
+			panic(err)
+		}
+		log.Print(resp.StatusCode)
+
+		respBody, err := ioutil.ReadAll(resp.Body)
+		if err == nil {
+			resText := string(respBody)
+			log.Printf(resText)
+		}
 	}
 
 }
 
-func TestSendData(t *testing.T) {
-	t.Log("aa")
-	for i := 0; i < 100; i++ {
-		Example_JSONSend()
-	}
+func main() {
+	SendJSONSample()
 }
