@@ -1,0 +1,15 @@
+{
+  "appId":"aaa",
+  "vid":"123",
+  "logBody":[
+      {
+          "category":"a",
+          "dateTime":"2018-01-01 11:11:11"
+      }
+      ,
+      {
+          "category":"bbb",
+          "dateTime":"2018-01-01 11:11:11"
+      }
+  ]
+}

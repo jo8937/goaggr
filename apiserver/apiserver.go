@@ -21,6 +21,7 @@ var (
 	//compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
 	//compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
 	fluentNetwork = flag.String("socket", "unix", "unix or tcp")
+	DEBUG_MODE    = flag.Bool("debug", false, "print request body")
 	client        *fluent.Fluent
 	wg            sync.WaitGroup
 )
@@ -56,9 +57,10 @@ func closeFluentd() {
 http 서버를 기동하고 블라킹. 서버 시작 전 fluentd 접속.
 */
 func startHTTPServer() {
+	flag.Parse()
+
 	client = createFluentdClient()
 	defer closeFluentd()
-	flag.Parse()
 
 	handler := requestHandler
 
@@ -76,37 +78,52 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	//log.Printf("Raw request is:\n---CUT---\n%s\n---CUT---", &ctx.Request)
 	//"Content-Encoding"
 	//	if ctx.
+	ctx.SetContentType("application/json; charset=utf8")
 
 	reqContentEncoding := ctx.Request.Header.Peek("Content-Encoding")
 	var dataMap map[string]interface{}
 
-	if reqContentEncoding != nil && string(reqContentEncoding) == "gzip" {
-		gzipData := ctx.PostBody()
+	postbody := ctx.PostBody()
 
+	if postbody == nil {
+		fmt.Fprintf(ctx, "{\"success\":false,\"message\":\"post body not found\"}")
+		return
+	}
+
+	if reqContentEncoding != nil && string(reqContentEncoding) == "gzip" {
 		var unzipDataBuf bytes.Buffer
 
-		fasthttp.WriteGunzip(&unzipDataBuf, gzipData)
+		fasthttp.WriteGunzip(&unzipDataBuf, postbody)
 
 		dataMap = parseJSONLog(unzipDataBuf.Bytes())
 	} else {
-		dataMap = parseJSONLog(ctx.PostBody())
+		dataMap = parseJSONLog(postbody)
 	}
 
-	log.Printf("requset data : %s", dataMap)
+	if dataMap == nil {
+		fmt.Fprintf(ctx, "{\"success\":false,\"message\":\"json parse error\"}")
+		return
+	}
+
+	// TODO : validate JSON  logBody / dateTime / category  must
+	// TODO : set client ip
+
+	if *DEBUG_MODE {
+		log.Printf("requset data : %s", dataMap)
+	}
 
 	go sendFluentd("debug.aaa", dataMap)
 
-	ctx.SetContentType("application/json; charset=utf8")
 	fmt.Fprintf(ctx, "{\"success\":true}")
-
 }
 
 func parseJSONLog(bytes []byte) map[string]interface{} {
 	var datamap map[string]interface{}
 	var json = jsoniter.ConfigCompatibleWithStandardLibrary
 	if err := json.Unmarshal(bytes, &datamap); err != nil {
-		log.Printf("JSON Parse ERROR : %s", bytes)
-		log.Fatal(err)
+		//log.Printf("JSON Parse ERROR : %s", bytes)
+		log.Print(err)
+		return nil
 	}
 	//log.Printf("%+v", datamap)
 	//log.Printf("%s", bytes)

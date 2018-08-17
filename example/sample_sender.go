@@ -9,33 +9,54 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
+	"sync"
 )
+
+// 샘플링 옵션
+type SamplingConfig struct {
+	url        string
+	datafile   string
+	total      int
+	concurrent int
+}
 
 var (
-	url = flag.String("url", "", "TCP address to listen to")
-	cnt = flag.Int("cnt", 1000000, "max retry ")
+	wg     sync.WaitGroup
+	config *SamplingConfig
 )
 
-func SendJSONSample() {
-	str := `{
-        "appId":"aaa",
-        "vid":"123",
-        "logBody":[
-            {
-                "category":"a",
-                "dateTime":"2018-01-01 11:11:11"
-            }
-            ,
-            {
-                "category":"bbb",
-                "dateTime":"2018-01-01 11:11:11"
-            }
-        ]
-	}`
-	jsonByte := []byte(str)
+func createConfig() *SamplingConfig {
+	c := new(SamplingConfig)
+	flag.StringVar(&c.url, "url", "http://localhost:8080", "TCP address to listen to")
+	flag.StringVar(&c.datafile, "datafile", "sample.json", "sample post data file script path")
+	flag.IntVar(&c.total, "total", 100, "total send data")
+	flag.IntVar(&c.concurrent, "concurrent", 8, "concurrent count")
+	flag.Parse()
+	return c
+}
+func getDataFileRealPath(datafile string) string {
+	realpath, err := filepath.Abs(datafile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return realpath
+}
+
+func initAnsSendJSONSample() {
+	config := createConfig()
+	SendJSONSample(config)
+}
+
+// send datafile to POST cnt times to url
+func SendJSONSample(config *SamplingConfig) {
+
+	jsonByte, err := ioutil.ReadFile(getDataFileRealPath(config.datafile))
+	if err != nil {
+		panic(err)
+	}
 
 	//reqBodyBuf := bytes.NewBufferString(str)
-
 	var gzipBuf bytes.Buffer
 	g := gzip.NewWriter(&gzipBuf)
 
@@ -47,37 +68,50 @@ func SendJSONSample() {
 		log.Print(err)
 		return
 	}
+	totalCnt := 0
+	for i, loopMax := 1, 1+int(config.total/config.concurrent); i <= loopMax; i++ {
 
-	req, err := http.NewRequest("POST", *url, &gzipBuf)
+		concurrentMax := config.concurrent
 
-	req.Header.Set("X-Custom-Header", "myvalue")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
+		if concurrentMax*i > config.total {
+			concurrentMax = config.total % concurrentMax
+		}
+		for n := 0; n < concurrentMax; n++ {
+			wg.Add(1)
+			go func(gzipBuf bytes.Buffer) {
+				req, err := http.NewRequest("POST", config.url, &gzipBuf)
+				if err != nil {
+					panic(err)
+				}
+				req.Header.Set("X-Custom-Header", "myvalue")
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Content-Encoding", "gzip")
 
-	if err != nil {
-		panic(err)
+				client := &http.Client{}
+				resp, err := client.Do(req)
+				//client = createFluentdClient()
+				//defer closeFluentd()
+				// TOSO send http
+				if err != nil {
+					panic(err)
+				}
+				log.Print(resp.StatusCode)
+
+				respBody, err := ioutil.ReadAll(resp.Body)
+				if err == nil {
+					resText := string(respBody)
+					log.Printf(resText)
+				}
+				wg.Done()
+				totalCnt++
+			}(gzipBuf)
+		}
+		wg.Wait()
 	}
 
-	for i := 0; i < *cnt; i++ {
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		//client = createFluentdClient()
-		//defer closeFluentd()
-		// TOSO send http
-		if err != nil {
-			panic(err)
-		}
-		log.Print(resp.StatusCode)
-
-		respBody, err := ioutil.ReadAll(resp.Body)
-		if err == nil {
-			resText := string(respBody)
-			log.Printf(resText)
-		}
-	}
-
+	log.Printf("send %d data finish", totalCnt)
 }
 
 func main() {
-	SendJSONSample()
+	initAnsSendJSONSample()
 }
