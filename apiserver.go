@@ -17,20 +17,36 @@ import (
 )
 
 var (
-	addr     = flag.String("addr", ":8080", "TCP address to listen to")
-	compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
-	client   *fluent.Fluent
-	wg       sync.WaitGroup
+	addr = flag.String("addr", ":8080", "TCP address to listen to")
+	//compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
+	//compress = flag.Bool("compress", false, "Whether to enable transparent response compression")
+	fluentNetwork = flag.String("socket", "unix", "unix or tcp")
+	client        *fluent.Fluent
+	wg            sync.WaitGroup
 )
 
 func createFluentdClient() *fluent.Fluent {
-	log.Printf("Connect Fluentd... ")
-	c, fluentderr := fluent.New(fluent.Config{FluentPort: 24224, FluentHost: "localhost"})
+	log.Printf("Initalize Fluentd... ")
+	// https://github.com/fluent/fluent-logger-golang/blob/master/fluent/fluent.go
+
+	var conf fluent.Config
+
+	if *fluentNetwork == "tcp" {
+		conf = fluent.Config{FluentPort: 24224, FluentHost: "localhost", Async: true}
+		log.Print("Use tcp://localhost:24224")
+	} else {
+		conf = fluent.Config{FluentNetwork: "unix", FluentSocketPath: "/dev/shm/fluentd.sock", Async: true}
+		log.Print("Use unix:///dev/shm/fluentd.sock")
+	}
+
+	c, fluentderr := fluent.New(conf)
+
 	if fluentderr != nil {
 		panic(fluentderr)
 	}
 	return c
 }
+
 func closeFluentd() {
 	log.Print("close fluentd")
 	client.Close()
@@ -45,11 +61,8 @@ func startHTTPServer() {
 	flag.Parse()
 
 	handler := requestHandler
-	if *compress {
-		handler = fasthttp.CompressHandler(handler)
-	}
 
-	log.Printf("Start Server... %s", *addr)
+	log.Printf("Start fasthttp Web Server... %s", *addr)
 
 	if err := fasthttp.ListenAndServe(*addr, handler); err != nil {
 		log.Fatalf("Error in ListenAndServe: %s", err)
