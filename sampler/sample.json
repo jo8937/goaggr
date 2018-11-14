@@ -1,7 +1,6 @@
 {
-  "appId":"aaa",
-  "vid":"123",
-  "logBody":[
+  "id":"123",
+  "datalist":[
       {
           "category":"a",
           "dateTime":"2018-01-01 11:11:11"

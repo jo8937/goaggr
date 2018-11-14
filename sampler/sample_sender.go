@@ -9,8 +9,11 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/google/logger"
 )
 
 // 샘플링 옵션
@@ -22,9 +25,30 @@ type SamplingConfig struct {
 }
 
 var (
-	wg     sync.WaitGroup
-	config *SamplingConfig
+	wg               sync.WaitGroup
+	config           *SamplingConfig
+	secondaryLogFile *os.File
+	secondaryLogger  *logger.Logger
 )
+
+func InitFileLogger(logPath string) {
+	secondaryLogFile, secondaryLogger = createFileLogger(logPath)
+}
+
+func CloseFileLogger() {
+	defer secondaryLogFile.Close()
+	defer secondaryLogger.Close()
+}
+
+func createFileLogger(logPath string) (*os.File, *logger.Logger) {
+	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0660)
+	if err != nil {
+		logger.Fatalf("Failed to open log file: %v", err)
+	}
+	lg := logger.Init("FluentdFails", false, false, lf)
+
+	return lf, lg
+}
 
 func createConfig() *SamplingConfig {
 	c := new(SamplingConfig)
